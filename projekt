@@ -1,0 +1,153 @@
+        bits    32
+        section .text
+        global  flipdiagbmp1
+
+flipdiagbmp1:
+        ;ebp+8 = *img, ebp+12 = bok
+        push    ebp			;prolog
+        mov     ebp, esp
+        push    ebx
+        push    esi
+        push    edi
+
+        mov     ebx, [ebp+12]		;dodanie paddingu
+        add     ebx, 31
+        shr     ebx, 3
+        and     ebx, -4
+
+        mov     esi, [ebp+8]
+        add     esi, ebx		;ustawienie esi na pierwszy bajt drugiej lini
+
+        mov     edi, [ebp+8]		;ustawienie esi na pierwszy bajt pierwszej lini lini
+
+        mov     ax, 0x8040              ;maska bitowa na ah = 10000000 i al 01000000
+
+        mov     edx, 1			;numer wiersza(i=1)
+
+two_row_loop:
+        xor     ecx, ecx		;numer piksela(j=0)
+
+inc_col_loop:
+        cmp     ecx, edx
+        jae     end_inc_col_loop        ;koniec wiersza
+
+        push    ebx                     ;brakuje rejestru więc wypchnięcie szerokości z paddingiem
+        mov     bh, ah                  
+        mov     bl, al                  
+        and     bl, [edi]               ;zapisuje w bl wartość piksela z edi
+
+        and     bh, [esi]               ;zapisuje w bh wartość piksela z esi
+        jnz     change_black1		;sprawdza czy piksel z edi powinien zostać czaryn czy biały
+
+        mov     bh, al			;zmienia kolor w edi na biały
+        not     bh			;zmienia kolor w edi na biały
+        and     [edi], bh		;zmienia kolor w edi na biały
+	jmp	pix2
+
+change_black1:
+	or      [edi], al		;zmień kolor na czarny
+
+pix2:
+        test    bl, bl			;sprawdza czy piksel z edi powinien zostać czaryn czy biały
+        jnz     change_black2		
+pix2_zero:
+        mov     bl, ah			
+        not     bl
+        and     [esi], bl               ;zmienia kolor w esi na biały
+	jmp	restore
+
+change_black2:
+	or      [esi], ah		;zmienia kolor w esi na czarny
+
+restore:
+        pop     ebx                     ;zapisz długość z padingiem spowrotem
+
+        inc     ecx                     ;j++
+
+        ror     ah, 1			;przejście maski na następny piksel
+        adc     esi, 0                  ;jeśli koniec bajtu to przejście na następny bajt
+
+        add     edi, ebx                ;przejście na bajt pod spodem
+        jmp     inc_col_loop
+
+end_inc_col_loop:
+        inc     edx                     ;i++
+        cmp     edx, [ebp+12]
+        jae     end_row_loop            ;sprawdzenie czy koniec
+
+        add     esi, ebx                ;przejście na bajt pod spodem
+
+        ror     al, 1			;przejście maski na następny piksel
+        adc     edi, 0                  ;jeśli koniec bajtu to przejście na następny bajt
+        mov     ecx, edx                ;j=i
+dec_col_loop:
+        test    ecx, ecx
+        jz      end_dec_col_loop        ;sprawdzenie czy koniec
+
+        push    ebx                     ;brakuje rejestru więc wypchnięcie szerokości z paddingiem
+        mov     bh, ah                  
+
+        mov     bl, al                  
+        and     bl, [edi]               
+
+        and     bh, [esi]               
+        jnz     change_black3
+
+        mov     bh, al
+        not     bh
+        and     [edi], bh
+	jmp	pix22
+
+change_black3:
+	or      [edi], al
+
+pix22:
+        test    bl, bl
+        jnz     change_black4
+pix2_zero2:
+        mov     bl, ah
+        not     bl
+        and     [esi], bl
+	jmp	restore2
+
+change_black4:
+	or      [esi], ah
+
+restore2:
+        pop     ebx                     ;zapisz długość z padingiem spowrotem
+
+        dec     ecx                     ;j--
+
+        rol     ah, 1
+        cmp     ah, 0x01
+        jne     no_dec                  
+        dec     esi			;jeśli trzeba to przejście do poprzedniego bajtu  
+no_dec:
+        sub     edi, ebx                
+        jmp     dec_col_loop
+
+end_dec_col_loop:
+        inc     edx                     ;i++
+        add     esi, ebx                ;bajt o jeden wyżej
+        ror     ah, 1
+        cmp     ah, 0x80
+        jne     no_inc
+        inc     esi                     
+no_inc:
+        add     edi, ebx                ;Pix2 += width
+        ror     al, 1
+        cmp     al, 0x80
+        jne     no_inc2
+        inc     edi                     ;jeśli trzeba to przejście do następnego bajtu
+no_inc2:
+        cmp     edx, [ebp+12]		;sprawdzenie czy koniec
+        jl      two_row_loop
+        ;if (processed rows > rows) break
+
+end_row_loop:
+        ;epilogue
+        pop     edi
+        pop     esi
+        pop     ebx
+        pop     ebp
+        ret
